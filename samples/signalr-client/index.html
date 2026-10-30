@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Matchday Hub — live match client</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
+      h1 { font-size: 1.3rem; }
+      label { display: block; margin: 0.5rem 0 0.2rem; font-weight: 600; }
+      input { width: 100%; padding: 0.4rem; box-sizing: border-box; }
+      button { margin-top: 0.8rem; padding: 0.5rem 1rem; cursor: pointer; }
+      #log { margin-top: 1rem; border: 1px solid #ccc; border-radius: 6px; padding: 0.5rem; height: 320px; overflow-y: auto; background: #0b1021; color: #d6e2ff; font-family: ui-monospace, monospace; font-size: 0.85rem; }
+      .goal { color: #7cf07c; } .card { color: #ffd166; } .score { color: #9ad0ff; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <h1>⚽ Matchday Hub — live match client</h1>
+    <p>
+      A ~40-line SignalR client (the Socket.io-client equivalent). Start the API, grab a
+      <code>LIVE</code> match id from <code>GET /v1/matches?status=Live</code>, paste it below, and
+      connect. Goals, cards, subs, and score updates stream in as the fake aggregator reveals them.
+    </p>
+    <p>
+      <strong>Serve this page from an allowed origin — don't open it with <code>file://</code>.</strong>
+      SignalR's <code>negotiate</code> is a cross-origin POST, and a <code>file://</code> page sends
+      <code>Origin: null</code>, which the credentialed CORS policy can't grant. From this folder run
+      <code>python3 -m http.server 8080</code> (or <code>npx serve -l 8080</code>) and open
+      <code>http://localhost:8080</code>. That origin is in the API's
+      <code>Cors:AllowedOrigins</code> defaults; add your own there if you serve it elsewhere.
+    </p>
+
+    <label for="baseUrl">API base URL</label>
+    <input id="baseUrl" value="http://localhost:5189" />
+
+    <label for="matchId">Match id (GUID of a live match)</label>
+    <input id="matchId" placeholder="00000000-0000-0000-0000-000000000000" />
+
+    <button id="connect">Connect &amp; subscribe</button>
+
+    <div id="log"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8/dist/browser/signalr.min.js"></script>
+    <script>
+      const log = (html, cls = "") => {
+        const el = document.getElementById("log");
+        el.innerHTML += `<div class="${cls}">${new Date().toLocaleTimeString()} — ${html}</div>`;
+        el.scrollTop = el.scrollHeight;
+      };
+
+      document.getElementById("connect").addEventListener("click", async () => {
+        const baseUrl = document.getElementById("baseUrl").value.replace(/\/$/, "");
+        const matchId = document.getElementById("matchId").value.trim();
+        if (!matchId) { log("Enter a match id first.", "card"); return; }
+
+        const connection = new signalR.HubConnectionBuilder()
+          .withUrl(`${baseUrl}/hubs/matches`)
+          .withAutomaticReconnect()
+          .build();
+
+        // Server method names come from MatchHubMethods.
+        connection.on("matchEvent", (e) => {
+          const cls = e.type === "Goal" ? "goal" : "card";
+          log(`${e.type} @ ${e.minute}' — ${e.playerName ?? "?"} (now ${e.homeScore}-${e.awayScore})`, cls);
+        });
+        connection.on("scoreUpdate", (s) => {
+          log(`score: ${s.homeScore}-${s.awayScore} [${s.status}]`, "score");
+        });
+
+        try {
+          await connection.start();
+          log(`connected to ${baseUrl}/hubs/matches`);
+          await connection.invoke("SubscribeToMatch", matchId); // joins the match:{id} group
+          log(`subscribed to match ${matchId}`);
+        } catch (err) {
+          log(`connection failed: ${err}`, "card");
+        }
+      });
+    </script>
+  </body>
+</html>
