@@ -129,8 +129,8 @@ All routes are versioned under `/v{version}` (currently `v1`), e.g. `/v1/matches
 | `GET` | `/v1/matches/{id}/events` | The event timeline for a match. |
 | `GET` | `/v1/matches/{id}/players/load` | Aggregated player physical-load report (distance, sprints, high-intensity minutes). |
 | `GET` | `/v1/teams/{id}/form` | A team's recent form (`?window=5`). **Redis output-cached.** |
-| `GET` | `/health` | Liveness. |
-| `GET` | `/health/ready` | Readiness (Postgres + Redis checks). |
+| `GET` | `/health` | Liveness — no dependency probes, so a transient Postgres/Redis blip can't restart the process. |
+| `GET` | `/health/ready` | Readiness (Postgres + Redis checks). Returns `503` when a dependency is down, taking the instance out of rotation. |
 | `GET` | `/openapi/v1.json`, `/scalar/v1` | OpenAPI document + Scalar UI. |
 | WS | `/hubs/matches` | SignalR hub. Call `SubscribeToMatch(guid)`; receive `matchEvent` + `scoreUpdate`. |
 

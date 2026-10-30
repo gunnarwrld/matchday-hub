@@ -92,7 +92,12 @@ v1.MapMatchEndpoints();
 
 app.MapHub<MatchHub>("/hubs/matches");
 
-app.MapHealthChecks("/health");
+// Liveness: no dependency probes, so a transient Postgres/Redis blip takes the instance
+// out of rotation (readiness) without triggering a process restart (liveness).
+app.MapHealthChecks("/health", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = _ => false,
+});
 app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
     Predicate = registration => registration.Tags.Contains("ready"),
