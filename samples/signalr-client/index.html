@@ -21,6 +21,14 @@
       <code>LIVE</code> match id from <code>GET /v1/matches?status=Live</code>, paste it below, and
       connect. Goals, cards, subs, and score updates stream in as the fake aggregator reveals them.
     </p>
+    <p>
+      <strong>Serve this page from an allowed origin — don't open it with <code>file://</code>.</strong>
+      SignalR's <code>negotiate</code> is a cross-origin POST, and a <code>file://</code> page sends
+      <code>Origin: null</code>, which the credentialed CORS policy can't grant. From this folder run
+      <code>python3 -m http.server 8080</code> (or <code>npx serve -l 8080</code>) and open
+      <code>http://localhost:8080</code>. That origin is in the API's
+      <code>Cors:AllowedOrigins</code> defaults; add your own there if you serve it elsewhere.
+    </p>
 
     <label for="baseUrl">API base URL</label>
     <input id="baseUrl" value="http://localhost:5189" />

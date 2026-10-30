@@ -9,6 +9,8 @@ using MatchdayHub.Infrastructure.Realtime;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 
+const string CorsPolicyName = "MatchdayClient";
+
 var builder = WebApplication.CreateBuilder(args);
 
 var redisConnection = builder.Configuration.GetConnectionString(DependencyInjection.RedisConnectionName);
@@ -44,6 +46,23 @@ if (!string.IsNullOrWhiteSpace(redisConnection))
     builder.Services.AddStackExchangeRedisOutputCache(options => options.Configuration = redisConnection);
 }
 
+// CORS so the standalone SignalR sample page (served from another origin) can run the
+// negotiate POST. Credentials are allowed, so origins must be explicit — never a wildcard.
+var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+builder.Services.AddCors(options =>
+    options.AddPolicy(CorsPolicyName, policy =>
+    {
+        if (corsOrigins.Length == 0)
+        {
+            return;
+        }
+
+        policy.WithOrigins(corsOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+    }));
+
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -74,6 +93,7 @@ var app = builder.Build();
 // ── Middleware pipeline ────────────────────────────────────────────────────────
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UseCors(CorsPolicyName);
 app.UseRateLimiter();
 app.UseOutputCache();
 
@@ -87,10 +107,11 @@ var versionSet = app.NewApiVersionSet()
 
 var v1 = app.MapGroup("/v{version:apiVersion}")
     .WithApiVersionSet(versionSet)
-    .HasApiVersion(new ApiVersion(1, 0));
+    .HasApiVersion(new ApiVersion(1, 0))
+    .RequireCors(CorsPolicyName);
 v1.MapMatchEndpoints();
 
-app.MapHub<MatchHub>("/hubs/matches");
+app.MapHub<MatchHub>("/hubs/matches").RequireCors(CorsPolicyName);
 
 // Liveness: no dependency probes, so a transient Postgres/Redis blip takes the instance
 // out of rotation (readiness) without triggering a process restart (liveness).

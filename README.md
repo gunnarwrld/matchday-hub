@@ -101,9 +101,34 @@ There is no need to run the `Worker` for the demo — the API hosts the ingestio
 ```bash
 # Find the live match id
 curl "http://localhost:5189/v1/matches?status=Live"
-# Open the sample client, paste the id, and watch goals/cards/subs arrive:
-open samples/signalr-client/index.html
+
+# Serve the sample page from an origin the API allows (see CORS below) — do NOT just
+# double-click it: a file:// page sends `Origin: null`, which CORS can't grant credentials to.
+cd samples/signalr-client && python3 -m http.server 8080   # → http://localhost:8080
 ```
+
+Open **http://localhost:8080**, paste the live match id, connect, and watch goals/cards/subs
+arrive. (`npx serve -l 8080` works too.)
+
+### CORS (needed by the sample client)
+
+SignalR's `negotiate` is a cross-origin POST, so the browser blocks it unless the API returns CORS
+headers. Allowed origins come from configuration (`Cors:AllowedOrigins`), and because the sample uses
+credentialed requests the policy sends `Access-Control-Allow-Credentials` — which means **explicit
+origins only, never a wildcard**. `appsettings.Development.json` ships with localhost defaults for the
+common static-file servers:
+
+```jsonc
+"Cors": {
+  "AllowedOrigins": [
+    "http://localhost:8080", "http://127.0.0.1:8080",   // python -m http.server 8080 / npx serve -l 8080
+    "http://localhost:5500", "http://127.0.0.1:5500"     // VS Code "Live Server"
+  ]
+}
+```
+
+Serving the sample from one of those origins (not `file://`) lets `connection.start()` succeed. Add
+your own origin to the list (or via `Cors__AllowedOrigins__0=...`) if you serve it elsewhere.
 
 ### Point it at the real aggregator
 
