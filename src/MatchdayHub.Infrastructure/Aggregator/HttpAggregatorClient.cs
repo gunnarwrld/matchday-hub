@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace MatchdayHub.Infrastructure.Aggregator;
 
@@ -11,29 +12,70 @@ namespace MatchdayHub.Infrastructure.Aggregator;
 /// .NET counterpart of wrapping <c>fetch</c> in a retry/backoff policy.
 /// The base address and default headers are configured at registration time.
 /// </summary>
-public sealed class HttpAggregatorClient(HttpClient httpClient, ILogger<HttpAggregatorClient> logger)
-    : IAggregatorClient
+public sealed class HttpAggregatorClient : IAggregatorClient
 {
+    private const int PageSize = 100;
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    private readonly HttpClient _httpClient;
+    private readonly ILogger<HttpAggregatorClient> _logger;
+    private readonly int _maxFixturePages;
+
+    public HttpAggregatorClient(
+        HttpClient httpClient,
+        ILogger<HttpAggregatorClient> logger,
+        IOptions<AggregatorOptions> options)
+    {
+        _httpClient = httpClient;
+        _logger = logger;
+        _maxFixturePages = Math.Max(1, options.Value.MaxFixturePages);
+    }
 
     public async Task<IReadOnlyList<AggregatorMatch>> GetMatchesAsync(CancellationToken cancellationToken = default)
     {
-        var wire = await GetEnvelopeAsync<List<WireMatch>>(
-            "/api/v1/matches?limit=100", cancellationToken);
+        // The aggregator paginates /matches (limit ≤ 100), so walk every page until the
+        // envelope's `meta.totalPages` is exhausted. A configurable guard stops a runaway
+        // loop if the upstream over-reports totalPages or never shrinks the result.
+        var matches = new List<AggregatorMatch>();
+        var page = 1;
 
-        return (wire ?? [])
-            .Where(m => m.ExternalId is not null)
-            .Select(ToAggregatorMatch)
-            .ToList();
+        while (true)
+        {
+            var envelope = await GetEnvelopeAsync<List<WireMatch>>(
+                $"/api/v1/matches?page={page}&limit={PageSize}", cancellationToken);
+
+            var rows = envelope?.Data ?? [];
+            matches.AddRange(rows.Where(m => m.ExternalId is not null).Select(ToAggregatorMatch));
+
+            var totalPages = envelope?.Meta?.TotalPages ?? 1;
+            if (rows.Count == 0 || page >= totalPages)
+            {
+                break;
+            }
+
+            if (page >= _maxFixturePages)
+            {
+                _logger.LogWarning(
+                    "Aggregator fixture paging stopped at the {MaxPages}-page guard (meta.totalPages={TotalPages}); " +
+                    "remaining fixtures were not synced.",
+                    _maxFixturePages, totalPages);
+                break;
+            }
+
+            page++;
+        }
+
+        return matches;
     }
 
     public async Task<IReadOnlyList<AggregatorEvent>> GetLiveEventsAsync(CancellationToken cancellationToken = default)
     {
-        var wire = await GetEnvelopeAsync<List<WireMatch>>(
+        var envelope = await GetEnvelopeAsync<List<WireMatch>>(
             "/api/v1/matches/live", cancellationToken);
 
         var events = new List<AggregatorEvent>();
-        foreach (var match in wire ?? [])
+        foreach (var match in envelope?.Data ?? [])
         {
             if (match.ExternalId is null || match.Events is null)
             {
@@ -76,16 +118,15 @@ public sealed class HttpAggregatorClient(HttpClient httpClient, ILogger<HttpAggr
         return events;
     }
 
-    private async Task<T?> GetEnvelopeAsync<T>(string path, CancellationToken cancellationToken)
+    private async Task<Envelope<T>?> GetEnvelopeAsync<T>(string path, CancellationToken cancellationToken)
     {
         try
         {
-            var envelope = await httpClient.GetFromJsonAsync<Envelope<T>>(path, JsonOptions, cancellationToken);
-            return envelope is null ? default : envelope.Data;
+            return await _httpClient.GetFromJsonAsync<Envelope<T>>(path, JsonOptions, cancellationToken);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
-            logger.LogWarning(ex, "Aggregator request to {Path} failed; treating as empty.", path);
+            _logger.LogWarning(ex, "Aggregator request to {Path} failed; treating as empty.", path);
             return default;
         }
     }
@@ -118,7 +159,16 @@ public sealed class HttpAggregatorClient(HttpClient httpClient, ILogger<HttpAggr
     // ── wire DTOs (the aggregator's JSON shape) ──────────────────────────────
 
     /// <summary>The aggregator wraps every payload in <c>{ success, data, meta }</c>.</summary>
-    private sealed record Envelope<T>([property: JsonPropertyName("data")] T? Data);
+    private sealed record Envelope<T>(
+        [property: JsonPropertyName("data")] T? Data,
+        [property: JsonPropertyName("meta")] PaginationMeta? Meta = null);
+
+    /// <summary>List endpoints include <c>{ page, limit, total, totalPages }</c> under <c>meta</c>.</summary>
+    private sealed record PaginationMeta(
+        [property: JsonPropertyName("page")] int Page,
+        [property: JsonPropertyName("limit")] int Limit,
+        [property: JsonPropertyName("total")] int Total,
+        [property: JsonPropertyName("totalPages")] int TotalPages);
 
     private sealed record WireTeam(
         [property: JsonPropertyName("externalId")] int? ExternalId,

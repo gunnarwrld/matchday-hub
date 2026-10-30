@@ -17,4 +17,11 @@ public sealed class AggregatorOptions
 
     /// <summary>When true, use the deterministic in-memory fake instead of HTTP.</summary>
     public bool UseFake { get; set; } = true;
+
+    /// <summary>
+    /// Upper bound on the number of fixture pages <see cref="HttpAggregatorClient.GetMatchesAsync"/>
+    /// will walk, so a runaway or misreported <c>totalPages</c> can't loop forever. Reaching it is
+    /// logged as a warning.
+    /// </summary>
+    public int MaxFixturePages { get; set; } = 50;
 }
