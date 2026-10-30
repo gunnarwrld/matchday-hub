@@ -1,0 +1,54 @@
+# Local dev dependencies for Matchday Hub.
+#
+#   docker compose up -d            # start Postgres + Redis, then `dotnet run` the API
+#   docker compose --profile full up --build   # also build & run the API in a container
+#
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: matchday-postgres
+    environment:
+      POSTGRES_DB: matchday
+      POSTGRES_USER: matchday
+      POSTGRES_PASSWORD: matchday
+    ports:
+      - "5432:5432"
+    volumes:
+      - matchday-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U matchday -d matchday"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: matchday-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Optional: run the API itself in a container (profile "full").
+  api:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: matchday-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=matchday;Username=matchday;Password=matchday"
+      ConnectionStrings__Redis: "redis:6379"
+    ports:
+      - "8080:8080"
+
+volumes:
+  matchday-postgres:
