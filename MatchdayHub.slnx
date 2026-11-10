@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MatchdayHub.Api/MatchdayHub.Api.csproj" />
+    <Project Path="src/MatchdayHub.Domain/MatchdayHub.Domain.csproj" />
+    <Project Path="src/MatchdayHub.Infrastructure/MatchdayHub.Infrastructure.csproj" />
+    <Project Path="src/MatchdayHub.Worker/MatchdayHub.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MatchdayHub.IntegrationTests/MatchdayHub.IntegrationTests.csproj" />
+    <Project Path="tests/MatchdayHub.UnitTests/MatchdayHub.UnitTests.csproj" />
+  </Folder>
+</Solution>

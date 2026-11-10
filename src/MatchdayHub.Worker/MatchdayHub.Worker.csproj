@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-MatchdayHub.Worker-be2a6276-de36-49fd-b4a1-50660539f111</UserSecretsId>
+  </PropertyGroup>
+
+  <!-- The Worker can broadcast SignalR messages through the Redis backplane, so it
+       also needs the ASP.NET Core shared framework. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pin the EF Core relational assembly so it unifies with the version the
+         Infrastructure project uses (avoids an MSB3277 version conflict). -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.14" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MatchdayHub.Infrastructure\MatchdayHub.Infrastructure.csproj" />
+    <ProjectReference Include="..\MatchdayHub.Domain\MatchdayHub.Domain.csproj" />
+  </ItemGroup>
+</Project>
