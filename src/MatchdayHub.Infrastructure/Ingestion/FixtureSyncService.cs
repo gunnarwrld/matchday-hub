@@ -9,8 +9,8 @@ namespace MatchdayHub.Infrastructure.Ingestion;
 /// <summary>
 /// Reconciles reference data (competitions, teams, fixtures) from the aggregator into
 /// our database. Upserts are keyed on upstream external ids, so re-running is safe.
-/// Live-owned fields (score, status) are only written when a match is first created —
-/// after that they belong to the live-event ingestion path and are never clobbered.
+/// Live-owned fields advance only with a forward status transition, or with a same-status
+/// score snapshot that does not reduce either side, so a stale poll cannot undo live events.
 /// </summary>
 public sealed class FixtureSyncService(
     MatchdayDbContext db,
@@ -123,7 +123,12 @@ public sealed class FixtureSyncService(
                 changed++;
             }
 
-            // Reference fields are always reconciled; score/status are not touched on update.
+            else
+            {
+                ReconcileLiveFields(match, fixture);
+            }
+
+            // Reference fields are always reconciled; live fields use a monotonic snapshot rule.
             match.Competition = competition;
             match.CompetitionId = competition.Id;
             match.HomeTeam = home;
@@ -134,5 +139,24 @@ public sealed class FixtureSyncService(
         }
 
         return changed;
+    }
+
+    private static void ReconcileLiveFields(Match match, AggregatorMatch fixture)
+    {
+        var incomingStatus = UpstreamMapping.ToMatchStatus(fixture.Status);
+        if ((int)incomingStatus > (int)match.Status)
+        {
+            match.Status = incomingStatus;
+            match.HomeScore = fixture.HomeScore;
+            match.AwayScore = fixture.AwayScore;
+            return;
+        }
+
+        if (incomingStatus == match.Status &&
+            fixture.HomeScore >= match.HomeScore && fixture.AwayScore >= match.AwayScore)
+        {
+            match.HomeScore = fixture.HomeScore;
+            match.AwayScore = fixture.AwayScore;
+        }
     }
 }

@@ -67,14 +67,23 @@ builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
-        RateLimitPartition.GetFixedWindowLimiter(
+    {
+        var path = context.Request.Path.Value;
+        if (string.Equals(path, "/health", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(path, "/health/ready", StringComparison.OrdinalIgnoreCase))
+        {
+            return RateLimitPartition.GetNoLimiter("health");
+        }
+
+        return RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
             factory: _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 100,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0,
-            }));
+            });
+    });
 });
 
 var healthChecks = builder.Services.AddHealthChecks();

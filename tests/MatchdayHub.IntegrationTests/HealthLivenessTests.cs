@@ -9,6 +9,20 @@ namespace MatchdayHub.IntegrationTests;
 public class HealthLivenessTests(MatchdayApiFactory factory)
 {
     [Fact]
+    public async Task Health_endpoints_bypass_the_global_rate_limit()
+    {
+        var client = factory.CreateClient();
+
+        for (var i = 0; i < 105; i++)
+        {
+            using var liveness = await client.GetAsync("/health");
+            using var readiness = await client.GetAsync("/health/ready");
+            Assert.NotEqual(HttpStatusCode.TooManyRequests, liveness.StatusCode);
+            Assert.NotEqual(HttpStatusCode.TooManyRequests, readiness.StatusCode);
+        }
+    }
+
+    [Fact]
     public async Task Liveness_stays_healthy_even_when_a_readiness_check_fails()
     {
         // Register a "ready"-tagged check that always fails. Readiness must reflect it;

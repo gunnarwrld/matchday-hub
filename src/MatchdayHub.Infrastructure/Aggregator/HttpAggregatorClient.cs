@@ -46,7 +46,18 @@ public sealed class HttpAggregatorClient : IAggregatorClient
                 $"/api/v1/matches?page={page}&limit={PageSize}", cancellationToken);
 
             var rows = envelope?.Data ?? [];
-            matches.AddRange(rows.Where(m => m.ExternalId is not null).Select(ToAggregatorMatch));
+            foreach (var row in rows)
+            {
+                if (!HasRequiredExternalIds(row))
+                {
+                    _logger.LogWarning(
+                        "Skipping aggregator fixture {ExternalId}: match, league, and both team external IDs must be positive.",
+                        row.ExternalId);
+                    continue;
+                }
+
+                matches.Add(ToAggregatorMatch(row));
+            }
 
             var totalPages = envelope?.Meta?.TotalPages ?? 1;
             if (rows.Count == 0 || page >= totalPages)
@@ -131,29 +142,35 @@ public sealed class HttpAggregatorClient : IAggregatorClient
         }
     }
 
+    private static bool HasRequiredExternalIds(WireMatch match) =>
+        match.ExternalId is > 0 &&
+        match.League?.ExternalId is > 0 &&
+        match.HomeTeam?.ExternalId is > 0 &&
+        match.AwayTeam?.ExternalId is > 0;
+
     private static AggregatorMatch ToAggregatorMatch(WireMatch m) => new(
         ExternalId: m.ExternalId!.Value,
-        CompetitionExternalId: m.League?.ExternalId ?? 0,
-        CompetitionName: m.League?.Name ?? "Unknown Competition",
-        Country: m.League?.Country ?? "Unknown",
-        Season: m.League?.Season ?? "n/a",
-        Home: ToTeamRef(m.HomeTeam),
-        Away: ToTeamRef(m.AwayTeam),
+        CompetitionExternalId: m.League!.ExternalId!.Value,
+        CompetitionName: m.League.Name ?? "Unknown Competition",
+        Country: m.League.Country ?? "Unknown",
+        Season: m.League.Season ?? "n/a",
+        Home: ToTeamRef(m.HomeTeam!),
+        Away: ToTeamRef(m.AwayTeam!),
         KickoffUtc: m.MatchDate ?? DateTimeOffset.UtcNow,
         Status: m.Status ?? "SCHEDULED",
         HomeScore: m.HomeScore,
         AwayScore: m.AwayScore);
 
-    private static AggregatorTeamRef ToTeamRef(WireTeam? team)
+    private static AggregatorTeamRef ToTeamRef(WireTeam team)
     {
-        var name = team?.Name ?? "Unknown";
-        var shortName = team?.ShortName;
+        var name = team.Name ?? "Unknown";
+        var shortName = team.ShortName;
         if (string.IsNullOrWhiteSpace(shortName))
         {
             shortName = name[..Math.Min(3, name.Length)].ToUpperInvariant();
         }
 
-        return new AggregatorTeamRef(team?.ExternalId ?? 0, name, shortName, team?.Stadium ?? string.Empty);
+        return new AggregatorTeamRef(team.ExternalId!.Value, name, shortName, team.Stadium ?? string.Empty);
     }
 
     // ── wire DTOs (the aggregator's JSON shape) ──────────────────────────────

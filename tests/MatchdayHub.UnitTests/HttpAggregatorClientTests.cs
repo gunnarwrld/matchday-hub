@@ -53,6 +53,30 @@ public class HttpAggregatorClientTests
         Assert.Equal(3, matches.Count);
     }
 
+    [Fact]
+    public async Task GetMatchesAsync_skips_fixtures_with_missing_or_zero_league_and_team_ids()
+    {
+        const string body = """
+            {"success":true,"data":[
+              {"externalId":1,"league":{"externalId":10},"homeTeam":{"externalId":20},"awayTeam":{"externalId":30}},
+              {"externalId":2,"league":{"externalId":null},"homeTeam":{"externalId":21},"awayTeam":{"externalId":31}},
+              {"externalId":3,"league":{"externalId":10},"homeTeam":{"name":"Missing ID"},"awayTeam":{"externalId":33}},
+              {"externalId":4,"league":{"externalId":10},"homeTeam":{"externalId":24},"awayTeam":{"externalId":0}}
+            ],"meta":{"page":1,"limit":50,"total":4,"totalPages":1}}
+            """;
+        var logger = new CapturingLogger();
+        var client = NewClient(new StaticResponseHandler(body), maxFixturePages: 50, logger);
+
+        var matches = await client.GetMatchesAsync();
+
+        var match = Assert.Single(matches);
+        Assert.Equal(1, match.ExternalId);
+        Assert.Equal(10, match.CompetitionExternalId);
+        Assert.Equal(20, match.Home.ExternalId);
+        Assert.Equal(30, match.Away.ExternalId);
+        Assert.Equal(3, logger.Warnings.Count);
+    }
+
     private static HttpAggregatorClient NewClient(
         HttpMessageHandler handler, int maxFixturePages, CapturingLogger? logger = null)
     {
@@ -74,7 +98,13 @@ public class HttpAggregatorClientTests
             RequestedPages.Add(page);
 
             var rows = string.Join(",", Enumerable.Range(0, perPage)
-                .Select(i => $"{{\"externalId\":{((page - 1) * perPage) + i + 1}}}"));
+                .Select(i =>
+                {
+                    var id = ((page - 1) * perPage) + i + 1;
+                    return $"{{\"externalId\":{id},\"league\":{{\"externalId\":99,\"name\":\"League\"}}," +
+                        $"\"homeTeam\":{{\"externalId\":{1000 + id},\"name\":\"Home\"}}," +
+                        $"\"awayTeam\":{{\"externalId\":{2000 + id},\"name\":\"Away\"}}}}";
+                }));
             var meta = $"{{\"page\":{page},\"limit\":{perPage},\"total\":{totalPages * perPage},\"totalPages\":{totalPages}}}";
             var body = $"{{\"success\":true,\"data\":[{rows}],\"meta\":{meta}}}";
 
@@ -83,6 +113,16 @@ public class HttpAggregatorClientTests
                 Content = new StringContent(body, Encoding.UTF8, "application/json"),
             });
         }
+    }
+
+    private sealed class StaticResponseHandler(string body) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            });
     }
 
     private sealed class CapturingLogger : ILogger<HttpAggregatorClient>
